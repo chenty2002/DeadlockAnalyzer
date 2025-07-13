@@ -1,0 +1,45 @@
+# Copyright 2023-2024 The Regents of the University of California
+# Copyright 2024-2025 Cornell University
+# released under BSD 3-Clause License
+# author: Kevin Laeufer <laeufer@cornell.edu>
+
+[workspace]
+resolver = "2"
+members = ["wellen", "pywellen"]
+default-members = ["wellen"]
+
+[workspace.package]
+version = "0.15.0"
+edition = "2021"
+# we require the `div_ceil` method on integers
+rust-version = "1.73.0"
+authors = ["Kevin Laeufer <laeufer@berkeley.edu>"]
+description = "Fast VCD and FST library for waveform viewers written in Rust."
+repository = "https://github.com/ekiwi/wellen"
+license = "BSD-3-Clause"
+keywords = ["vcd", "fst", "waveform", "wavedump"]
+
+
+[workspace.dependencies]
+fst-reader = "0.10.2"
+leb128 = "0.2.5"
+lz4_flex = "0.11.3"
+memmap2 = "0.9.5"
+rayon = "1.10.0"
+num_enum = "0.7"
+thiserror = "2.0"
+serde = { version = "1.0", features = ["derive"] }
+rustc-hash = "2.1"
+miniz_oxide = "0.8.3"
+
+# dev dependencies
+itertools = "0.14.0"
+vcd = "0.7.0"
+clap = { version = "4.4.6", features = ["derive"] }
+criterion = "0.5"
+indicatif = "0.17.8"
+proptest = "1.4.0"
+wellen = { path = "wellen" }
+
+[profile.release]
+debug = true
