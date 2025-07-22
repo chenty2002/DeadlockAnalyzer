@@ -1,31 +1,33 @@
 import networkx as nx
 import matplotlib.pyplot as plt
+import numpy as np
 
 
 def graph_wrapper(normal_edges, waiting_edges, blocked_edges, nodes=('L0_0', 'L0_1', 'L1_0', 'L1_1', 'L2_0', 'L2_1', 'L3')):
     G = nx.DiGraph()
     G.add_nodes_from(nodes)
-    G.add_edges_from(normal_edges)
+    G.add_edges_from(normal_edges.keys())
 
     for node in G.nodes:
         G.nodes[node]["color"] = "lightblue"
 
     for edge in G.edges:
-        G.edges[edge]["color"] = "gray"
-        G.edges[edge]["width"] = 1.5
-    
-    G.add_edges_from(waiting_edges)
-    for (u, v) in waiting_edges:
+        G.edges[edge]["color"] = "green"
+        G.edges[edge]["width"] = 3.0
+
+    G.add_edges_from(waiting_edges.keys())
+    for (u, v) in waiting_edges.keys():
         G.edges[(u, v)]["color"] = "black"
-        G.edges[(u, v)]["width"] = 1.5
+        G.edges[(u, v)]["width"] = 3.0
         # G.nodes[u]["color"] = "black"
         
-    G.add_edges_from(blocked_edges)
-    for (u, v) in blocked_edges:
+    G.add_edges_from(blocked_edges.keys())
+    for (u, v) in blocked_edges.keys():
         G.edges[(u, v)]["color"] = "red"
         G.edges[(u, v)]["width"] = 3.0
         G.nodes[u]["color"] = "red"
         
+    edge_labels = normal_edges | waiting_edges | blocked_edges
         
     plt.figure(figsize=(10, 8))
 
@@ -50,14 +52,18 @@ def graph_wrapper(normal_edges, waiting_edges, blocked_edges, nodes=('L0_0', 'L0
     edge_widths = [G.edges[edge].get("width", 1.5) for edge in G.edges]
     nx.draw_networkx_edges(
         G, pos, width=edge_widths, edge_color=edge_colors, 
-        arrowsize=20, alpha=0.8, connectionstyle="arc3,rad=0.1"
+        arrowsize=30, alpha=0.8, connectionstyle="arc3,rad=0.1"
     )
 
     # 绘制节点标签
     nx.draw_networkx_labels(G, pos, font_size=12)
+    nx.draw_networkx_edge_labels(
+        G, pos, edge_labels=edge_labels, label_pos=0.2, 
+        font_size=8, rotate=False, connectionstyle="arc3,rad=0.1"
+    )
     plt.axis("off")
     plt.tight_layout()
-    plt.show()
+    plt.savefig('waitfor_graph.png')
 
 
 def draw_graph(edges, name):
