@@ -11,7 +11,8 @@ fst_path = abspath(join(dirname(__file__), '../fst'))
 
 # fst_file = "/home/loyce/XiangShan/CoupledL2-Verification/deadlock_analyzer/fst/CoupledL2_L2AsL1_TileLink_mshrCtl死锁_0621_2L2_L3_替换算法拓展.fst"
 # fst_file = "/home/loyce/XiangShan/CoupledL2-Verification/deadlock_analyzer/fst/CoupledL2_L2AsL1_TileLink_mshrCtl死锁_0508_2L2_L3_持续发0地址.fst"
-fst_file = join(fst_path, "CoupledL2_L2AsL1_TileLink_mshrCtl死锁_0531_2L1_2L2_L3_替换算法.fst")
+# fst_file = join(fst_path, "CoupledL2_L2AsL1_TileLink_mshrCtl死锁_0531_2L1_2L2_L3_替换算法.fst")
+fst_file = join(fst_path, "CoupledL2_L2AsL1_TileLink_mshrCtl死锁_0621_2L2_L3_替换算法拓展.fst")
 waveform = Waveform(path=fst_file, multi_threaded=True)
 
 # 获取波形层次结构
@@ -117,6 +118,7 @@ def acquire_block(waveform, l2_i, tag, set, mshr_t):
     l1_req_channel = -1
     l1_req_opcode = -1
 
+    l1_mshr_status = []
     for i in range(16):
         try:
             mshr_i_status = waveform.get_signal_from_path(f'VerifyTop.{l1_str}.slices_0.mshrCtl.mshrs_{i}.io_status_valid')
@@ -125,61 +127,61 @@ def acquire_block(waveform, l2_i, tag, set, mshr_t):
                 mshr_i_status = waveform.get_signal_from_path(f'VerifyTop.{l1_str}.slices_0.mshrCtl.mshrs_{i}.io__status_valid')
             except RuntimeError:
                 break
+        l1_sig_changes = list(mshr_i_status.all_changes())
+        for t, v in l1_sig_changes:
+            if v == 1:
+                l1_mshr_status.append([i, t, length_ns])
+            else:
+                if l1_mshr_status:
+                    l1_mshr_status[-1][-1] = t
+    l1_mshr_status.sort(key=lambda x: x[1], reverse=True)
 
+    for i, ts, te in l1_mshr_status:
+        if ts >= l2_receive_t:
+            continue
         l1_req_set_sig = waveform.get_signal_from_path(f'VerifyTop.{l1_str}.slices_0.mshrCtl.mshrs_{i}.req_set')
         l1_req_tag_sig = waveform.get_signal_from_path(f'VerifyTop.{l1_str}.slices_0.mshrCtl.mshrs_{i}.req_tag')
         l1_req_source_sig = waveform.get_signal_from_path(f'VerifyTop.{l1_str}.slices_0.mshrCtl.mshrs_{i}.req_sourceId')
         l1_req_channel_sig = waveform.get_signal_from_path(f'VerifyTop.{l1_str}.slices_0.mshrCtl.mshrs_{i}.req_channel')
         l1_req_opcode_sig = waveform.get_signal_from_path(f'VerifyTop.{l1_str}.slices_0.mshrCtl.mshrs_{i}.req_opcode')
 
-        l1_sig_changes = list(mshr_i_status.all_changes())
-
-        for t, v in l1_sig_changes:
-            if v == 1:
-                l1_set_tmp = l1_req_set_sig.value_at_time(t)
-                l1_tag_tmp = l1_req_tag_sig.value_at_time(t)
-                if get_l1_addr(l1_tag_tmp, l1_set_tmp) != l1_addr:
-                    continue
-                # if l1_req_channel_sig.value_at_time(t) != 1:
-                #     continue
-                # if l1_req_opcode_sig.value_at_time(t) != l1_opcode:
-                #     continue
-                l1_req_set = l1_req_set_sig.value_at_time(t)
-                l1_req_tag = l1_req_tag_sig.value_at_time(t)
-                l1_req_channel = l1_req_channel_sig.value_at_time(t)
-                l1_req_opcode = l1_req_opcode_sig.value_at_time(t)
-                l1_req_source = l1_req_source_sig.value_at_time(t)
-                
-                l1_mshr_i = i
-                l1_mshr_start = t
-            else:
-                if l1_mshr_start != -1:
-                    l1_mshr_end = t
-                    break
-            
-        if l1_mshr_i != -1:
-            break
+        l1_set_tmp = l1_req_set_sig.value_at_time(ts)
+        l1_tag_tmp = l1_req_tag_sig.value_at_time(ts)
+        if get_l1_addr(l1_tag_tmp, l1_set_tmp) != l1_addr:
+            continue
+        # if l1_req_channel_sig.value_at_time(t) != 1:
+        #     continue
+        # if l1_req_opcode_sig.value_at_time(t) != l1_opcode:
+        #     continue
+        l1_req_set = l1_req_set_sig.value_at_time(ts)
+        l1_req_tag = l1_req_tag_sig.value_at_time(ts)
+        l1_req_channel = l1_req_channel_sig.value_at_time(ts)
+        l1_req_opcode = l1_req_opcode_sig.value_at_time(ts)
+        l1_req_source = l1_req_source_sig.value_at_time(ts)
+        
+        l1_mshr_i = i
+        l1_mshr_start = ts
+        l1_mshr_end = te
+        break
 
 
     if l1_mshr_i == -1:
         print('\trequest not found in l1')
-    elif l1_mshr_end == -1:
-        l1_mshr_end = length_ns
     
-        print(f'\tNo. of L1 MSHR - l1_mshr_i: {l1_mshr_i}\n'
-            f'\tStart Time - l1_mshr_start: {l1_mshr_start}ns\n')
-        if l1_mshr_end != length_ns:
-            print(f'\tEnd Time - l1_mshr_end: {l1_mshr_end}ns\n')
-        
-        print(f'\tRequest in l1 MSHR:\n'
-            f'\treq_set: {l1_req_set}\n'
-            f'\treq_tag: {l1_req_tag}\n'
-            f'\treq_source: {l1_req_source}\n'
-            f'\treq_channel: {l1_req_channel}\n'
-            f'\treq_opcode: {l1_req_opcode}\n'
-            f'\treq_addr: {get_l1_addr(l1_req_tag, l1_req_set)}')
-        if (l1_req_opcode, l1_req_channel) == TileLinkConsts.AcquireBlock:
-            print('\tProcessing AcquireBlock\n')
+    print(f'\tNo. of L1 MSHR - l1_mshr_i: {l1_mshr_i}\n'
+          f'\tStart Time - l1_mshr_start: {l1_mshr_start}ns\n')
+    if l1_mshr_end != length_ns:
+        print(f'\tEnd Time - l1_mshr_end: {l1_mshr_end}ns\n')
+    
+    print(f'\tRequest in l1 MSHR:\n'
+          f'\treq_set: {l1_req_set}\n'
+          f'\treq_tag: {l1_req_tag}\n'
+          f'\treq_source: {l1_req_source}\n'
+          f'\treq_channel: {l1_req_channel}\n'
+          f'\treq_opcode: {l1_req_opcode}\n'
+          f'\treq_addr: {get_l1_addr(l1_req_tag, l1_req_set)}')
+    if (l1_req_opcode, l1_req_channel) == TileLinkConsts.AcquireBlock:
+        print('\tProcessing AcquireBlock\n')
     
     
     # l2 send to l3
@@ -233,6 +235,7 @@ def acquire_block(waveform, l2_i, tag, set, mshr_t):
     
     l3_iam = -1
 
+    l3_mshr_status = []
     for i in range(16):
         try:
             mshr_i_status = waveform.get_signal_from_path(f'VerifyTop.l3.slices_0.mshrAlloc.io_status_{i}_valid')
@@ -241,6 +244,19 @@ def acquire_block(waveform, l2_i, tag, set, mshr_t):
                 mshr_i_status = waveform.get_signal_from_path(f'VerifyTop.l3.slices_0.mshrAlloc.io__status_{i}_valid')
             except RuntimeError:
                 break
+        l3_sig_changes = list(mshr_i_status.all_changes())
+
+        for t, v in l3_sig_changes:
+            if v == 1:
+                l3_mshr_status.append([i, t, length_ns])
+            else:
+                if l3_mshr_status:
+                    l3_mshr_status[-1][-1] = t
+    
+    l3_mshr_status.sort(key=lambda x: x[1])
+    for i, ts, te in l3_mshr_status:
+        if ts < l2_send_t:
+            continue
 
         l3_iam_sig = waveform.get_signal_from_path(f'VerifyTop.l3.slices_0.ms_{i}.iam')
         l3_req_set_sig = waveform.get_signal_from_path(f'VerifyTop.l3.slices_0.ms_{i}.req_set')
@@ -252,49 +268,35 @@ def acquire_block(waveform, l2_i, tag, set, mshr_t):
         l3_req_param_sig = waveform.get_signal_from_path(f'VerifyTop.l3.slices_0.ms_{i}.req_param')
         l3_req_size_sig = waveform.get_signal_from_path(f'VerifyTop.l3.slices_0.ms_{i}.req_size')
 
-        l3_sig_changes = list(mshr_i_status.all_changes())
-
-        for t, v in l3_sig_changes:
-            if t < l2_send_t:
-                continue
-            if v == 1: 
-                l3_set_tmp = l3_req_set_sig.value_at_time(t)
-                l3_tag_tmp = l3_req_tag_sig.value_at_time(t)
-                if get_l3_addr(l3_tag_tmp, l3_set_tmp) != l3_addr:
-                    continue
-                if l3_iam_sig.value_at_time(t)%2 != l2_i:
-                    continue
-                if l3_req_channel_sig.value_at_time(t) != 1:
-                    continue
-                if l3_req_opcode_sig.value_at_time(t) != l3_opcode:
-                    continue
-                l3_req_set = l3_req_set_sig.value_at_time(t)
-                l3_req_tag = l3_req_tag_sig.value_at_time(t)
-                l3_req_channel = l3_req_channel_sig.value_at_time(t)
-                l3_req_opcode = l3_req_opcode_sig.value_at_time(t)
-                l3_req_source = l3_req_source_sig.value_at_time(t)
-                l3_req_mask = l3_req_mask_sig.value_at_time(t)
-                l3_req_param = l3_req_param_sig.value_at_time(t)
-                l3_req_size = l3_req_size_sig.value_at_time(t)
-                
-                l3_iam = l3_iam_sig.value_at_time(t)
-                l3_mshr_i = i
-                l3_mshr_start = t
-            else:
-                if l3_mshr_start != -1:
-                    l3_mshr_end = t
-                    break
-            
-        if l3_mshr_i != -1:
-            break
+        l3_set_tmp = l3_req_set_sig.value_at_time(ts)
+        l3_tag_tmp = l3_req_tag_sig.value_at_time(ts)
+        if get_l3_addr(l3_tag_tmp, l3_set_tmp) != l3_addr:
+            continue
+        if l3_iam_sig.value_at_time(ts)%2 != l2_i:
+            continue
+        if l3_req_channel_sig.value_at_time(ts) != 1:
+            continue
+        if l3_req_opcode_sig.value_at_time(ts) != l3_opcode:
+            continue
+        l3_req_set = l3_req_set_sig.value_at_time(ts)
+        l3_req_tag = l3_req_tag_sig.value_at_time(ts)
+        l3_req_channel = l3_req_channel_sig.value_at_time(ts)
+        l3_req_opcode = l3_req_opcode_sig.value_at_time(ts)
+        l3_req_source = l3_req_source_sig.value_at_time(ts)
+        l3_req_mask = l3_req_mask_sig.value_at_time(ts)
+        l3_req_param = l3_req_param_sig.value_at_time(ts)
+        l3_req_size = l3_req_size_sig.value_at_time(ts)
+        
+        l3_iam = l3_iam_sig.value_at_time(ts)
+        l3_mshr_i = i
+        l3_mshr_start = ts
+        l3_mshr_end = te
+        break
 
 
     if l3_mshr_i == -1:
         print('\trequest not found in L3')
         return -1, -1, -1
-    
-    if l3_mshr_end == -1:
-        l3_mshr_end = length_ns
     
     print(f'\tNo. of L3 MSHR - l3_mshr_i: {l3_mshr_i}\n'
           f'\tStart Time - l3_mshr_start: {l3_mshr_start}ns\n')
@@ -336,6 +338,8 @@ def find_trans_in_mshr(waveform, level, l_i, addr, start_time, end_time, trans):
     this_addr = -1
     this_opcode = -1
     this_channel = -1
+    
+    this_mshr_status = []
     for i in range(16):
         mshr_str = f'VerifyTop.{level_str}.slices_0.mshrCtl.mshrs_{i}'
         try:
@@ -345,41 +349,43 @@ def find_trans_in_mshr(waveform, level, l_i, addr, start_time, end_time, trans):
                 mshr_i_status = waveform.get_signal_from_path(f'{mshr_str}.io__status_valid')
             except RuntimeError:
                 break
-        
+        this_sig_changes = list(mshr_i_status.all_changes())
+
+        for t, v in this_sig_changes:
+            if v == 1:
+                this_mshr_status.append([i, t])
+
+    this_mshr_status.sort(key=lambda x: x[1])
+
+    for i, t in this_mshr_status:
+        if t < this_receive_t:
+            continue
+        mshr_str = f'VerifyTop.{level_str}.slices_0.mshrCtl.mshrs_{i}'
         this_req_set_sig = waveform.get_signal_from_path(f'{mshr_str}.req_set')
         this_req_tag_sig = waveform.get_signal_from_path(f'{mshr_str}.req_tag')
         this_req_source_sig = waveform.get_signal_from_path(f'{mshr_str}.req_sourceId')
         this_req_channel_sig = waveform.get_signal_from_path(f'{mshr_str}.req_channel')
         this_req_opcode_sig = waveform.get_signal_from_path(f'{mshr_str}.req_opcode')
-        this_sig_changes = list(mshr_i_status.all_changes())
+
+        this_set_tmp = this_req_set_sig.value_at_time(t)
+        this_tag_tmp = this_req_tag_sig.value_at_time(t)
+        this_addr_tmp = getattr(param_configs, f'get_{level}_addr')(this_tag_tmp, this_set_tmp)
+        if this_addr_tmp != addr:
+            continue
+        if this_req_opcode_sig.value_at_time(t) != trans[0]:
+            continue
+        if this_req_channel_sig.value_at_time(t) != trans[1]:
+            continue
         
-        for t, v in this_sig_changes:
-            if t < this_receive_t:
-                continue
-            if v == 0:
-                continue
-            
-            this_set_tmp = this_req_set_sig.value_at_time(t)
-            this_tag_tmp = this_req_tag_sig.value_at_time(t)
-            this_addr_tmp = getattr(param_configs, f'get_{level}_addr')(this_tag_tmp, this_set_tmp)
-            if this_addr_tmp != addr:
-                continue
-            if this_req_opcode_sig.value_at_time(t) != trans[0]:
-                continue
-            if this_req_channel_sig.value_at_time(t) != trans[1]:
-                continue
-            
-            this_set = this_set_tmp
-            this_tag = this_tag_tmp
-            this_opcode = this_req_opcode_sig.value_at_time(t)
-            this_channel = this_req_channel_sig.value_at_time(t)
-            this_addr = addr
-            
-            this_mshr_i = i
-            this_mshr_start = t
-            break
-        if this_mshr_i != -1:
-            break
+        this_set = this_set_tmp
+        this_tag = this_tag_tmp
+        this_opcode = this_req_opcode_sig.value_at_time(t)
+        this_channel = this_req_channel_sig.value_at_time(t)
+        this_addr = addr
+        
+        this_mshr_i = i
+        this_mshr_start = t
+        break
         
     if this_mshr_i == -1:
         # print(f'Request not found in {level_str}')
@@ -584,48 +590,47 @@ def trace_conflict_mshr(waveform, level, l_i, mshr_i, conflict_t):
     l2_level_str = get_level_str('l2', l_i)
     l2_mshr_str = f'VerifyTop.{l2_level_str}.slices_0.mshrCtl.mshrs'
 
+    l2_mshr_status = []
     for i in range(16):
         try:
             mshr_i_status = waveform.get_signal_from_path(f'{l2_mshr_str}_{i}.io_status_valid')
         except RuntimeError:
             break
+        l2_sig_changes = list(mshr_i_status.all_changes())
+        for t, v in l2_sig_changes:
+            if v == 1:
+                l2_mshr_status.append([i, t, length_ns])
+            else:
+                if l2_mshr_status:
+                    l2_mshr_status[-1][-1] = t
+                    
+    l2_mshr_status.sort(key=lambda x: x[1])
 
+    for i, ts, te in l2_mshr_status:
+        if ts < l1_start_time:
+            continue
         l2_req_set_sig = waveform.get_signal_from_path(f'{l2_mshr_str}_{i}.req_set')
         l2_req_tag_sig = waveform.get_signal_from_path(f'{l2_mshr_str}_{i}.req_tag')
         l2_req_channel_sig = waveform.get_signal_from_path(f'{l2_mshr_str}_{i}.req_channel')
         l2_req_opcode_sig = waveform.get_signal_from_path(f'{l2_mshr_str}_{i}.req_opcode')
-
-        l2_sig_changes = list(mshr_i_status.all_changes())
-
-        for t, v in l2_sig_changes:
-            if t < l1_start_time:
-                continue
-            if v == 1: 
-                l2_set_tmp = l2_req_set_sig.value_at_time(t)
-                l2_tag_tmp = l2_req_tag_sig.value_at_time(t)
-                if get_l2_addr(l2_tag_tmp, l2_set_tmp) != l1_addr:
-                    continue
-                l2_req_set = l2_req_set_sig.value_at_time(t)
-                l2_req_tag = l2_req_tag_sig.value_at_time(t)
-                l2_req_channel = l2_req_channel_sig.value_at_time(t)
-                l2_req_opcode = l2_req_opcode_sig.value_at_time(t)
-                
-                l2_mshr_i = i
-                l2_mshr_start = t
-            else:
-                if l2_mshr_start != -1:
-                    l2_mshr_end = t
-                    break
-            
-        if l2_mshr_i != -1:
-            break
+ 
+        l2_set_tmp = l2_req_set_sig.value_at_time(ts)
+        l2_tag_tmp = l2_req_tag_sig.value_at_time(ts)
+        if get_l2_addr(l2_tag_tmp, l2_set_tmp) != l1_addr:
+            continue
+        l2_req_set = l2_req_set_sig.value_at_time(ts)
+        l2_req_tag = l2_req_tag_sig.value_at_time(ts)
+        l2_req_channel = l2_req_channel_sig.value_at_time(ts)
+        l2_req_opcode = l2_req_opcode_sig.value_at_time(ts)
+        
+        l2_mshr_i = i
+        l2_mshr_start = ts
+        l2_mshr_end = te
+        break
 
     if l2_mshr_i == -1:
         print(f'The consequent request of L1 mshr_{mshr_i} not found in L2')
         return 1, l1_addr
-    
-    if l2_mshr_end == -1:
-        l2_mshr_end = length_ns
     
     print(f'The consequent request of L1 mshr_{mshr_i} in L2:\n'
           f'\tl2_mshr_i: {l2_mshr_i}\n'
@@ -651,6 +656,7 @@ def trace_conflict_mshr(waveform, level, l_i, mshr_i, conflict_t):
     
     l3_iam = -1
 
+    l3_mshr_status = []
     for i in range(16):
         try:
             mshr_i_status = waveform.get_signal_from_path(f'VerifyTop.l3.slices_0.mshrAlloc.io_status_{i}_valid')
@@ -659,47 +665,44 @@ def trace_conflict_mshr(waveform, level, l_i, mshr_i, conflict_t):
                 mshr_i_status = waveform.get_signal_from_path(f'VerifyTop.l3.slices_0.mshrAlloc.io__status_{i}_valid')
             except RuntimeError:
                 break
+        l3_sig_changes = list(mshr_i_status.all_changes())
+        for t, v in l3_sig_changes:
+            if v == 1:
+                l3_mshr_status.append([i, t, length_ns])
+            else:
+                if l3_mshr_status:
+                    l3_mshr_status[-1][-1] = t
+    l3_mshr_status.sort(key=lambda x: x[1])
 
+    for i, ts, te in l3_mshr_status:
+        if ts < l2_mshr_start:
+            continue
         l3_iam_sig = waveform.get_signal_from_path(f'VerifyTop.l3.slices_0.ms_{i}.iam')
         l3_req_set_sig = waveform.get_signal_from_path(f'VerifyTop.l3.slices_0.ms_{i}.req_set')
         l3_req_tag_sig = waveform.get_signal_from_path(f'VerifyTop.l3.slices_0.ms_{i}.req_tag')
         l3_req_channel_sig = waveform.get_signal_from_path(f'VerifyTop.l3.slices_0.ms_{i}.req_channel')
         l3_req_opcode_sig = waveform.get_signal_from_path(f'VerifyTop.l3.slices_0.ms_{i}.req_opcode')
 
-        l3_sig_changes = list(mshr_i_status.all_changes())
-
-        for t, v in l3_sig_changes:
-            if t < l2_mshr_start:
-                continue
-            if v == 1: 
-                l3_set_tmp = l3_req_set_sig.value_at_time(t)
-                l3_tag_tmp = l3_req_tag_sig.value_at_time(t)
-                if get_l3_addr(l3_tag_tmp, l3_set_tmp) != l1_addr:
-                    continue
-                if l3_iam_sig.value_at_time(t)%2 != l_i:
-                    continue
-                l3_req_set = l3_req_set_sig.value_at_time(t)
-                l3_req_tag = l3_req_tag_sig.value_at_time(t)
-                l3_req_channel = l3_req_channel_sig.value_at_time(t)
-                l3_req_opcode = l3_req_opcode_sig.value_at_time(t)
-                
-                l3_iam = l3_iam_sig.value_at_time(t)
-                l3_mshr_i = i
-                l3_mshr_start = t
-            else:
-                if l3_mshr_start != -1:
-                    l3_mshr_end = t
-                    break
-            
-        if l3_mshr_i != -1:
-            break
+        l3_set_tmp = l3_req_set_sig.value_at_time(ts)
+        l3_tag_tmp = l3_req_tag_sig.value_at_time(ts)
+        if get_l3_addr(l3_tag_tmp, l3_set_tmp) != l1_addr:
+            continue
+        if l3_iam_sig.value_at_time(ts)%2 != l_i:
+            continue
+        l3_req_set = l3_req_set_sig.value_at_time(ts)
+        l3_req_tag = l3_req_tag_sig.value_at_time(ts)
+        l3_req_channel = l3_req_channel_sig.value_at_time(ts)
+        l3_req_opcode = l3_req_opcode_sig.value_at_time(ts)
+        
+        l3_iam = l3_iam_sig.value_at_time(ts)
+        l3_mshr_i = i
+        l3_mshr_start = ts
+        l3_mshr_end = te
+        break
 
     if l3_mshr_i == -1:
         print(f'\nThe consequent request of L2 mshr_{mshr_i} not found in L3')
         return 2, l1_addr
-    
-    if l3_mshr_end == -1:
-        l3_mshr_end = length_ns
     
     print(f'\nThe consequent request of L2 mshr_{mshr_i} in L3:\n'
           f'\tl3_mshr_i: {l3_mshr_i}\n'
@@ -791,7 +794,7 @@ def probe_ack(waveform, l2_i, addr, start_time, end_time):
                 (node_L1_1, node_L2_1): 'ProbeAckData'
             }
             
-        graph_wrapper(normal_edges, waiting_edges, blocked_edges)
+        # graph_wrapper(normal_edges, waiting_edges, blocked_edges)
     
     
 print('Stagnation Detected:')
