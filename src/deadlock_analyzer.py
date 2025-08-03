@@ -34,13 +34,12 @@ mshr_status = [[], []]
 status_changes = [[], []]
 mshr_i = [-1, -1]
 for l2 in range(2):
+    cpl2_str = get_level_str('l2', l2)
     for i in range(16):
         try:
-            cpl2_str = 'coupledL2' if l2 == 0 else 'coupledL2_1'
             mshr_i_status = waveform.get_signal_from_path(f'VerifyTop.{cpl2_str}.slices_0.mshrCtl.mshrs_{i}.io_status_valid')
         except RuntimeError:
             try:
-                cpl2_str = 'coupledL2' if l2 == 0 else 'coupledL2_1'
                 mshr_i_status = waveform.get_signal_from_path(f'VerifyTop.{cpl2_str}.slices_0.mshrCtl.mshrs_{i}.io__status_valid')
             except RuntimeError:
                 break
@@ -132,7 +131,7 @@ def acquire_block(waveform, l2_i, tag, set, mshr_t):
             if v == 1:
                 l1_mshr_status.append([i, t, length_ns])
             else:
-                if l1_mshr_status:
+                if l1_mshr_status and l1_mshr_status[-1][0] == i:
                     l1_mshr_status[-1][-1] = t
     l1_mshr_status.sort(key=lambda x: x[1], reverse=True)
 
@@ -169,11 +168,11 @@ def acquire_block(waveform, l2_i, tag, set, mshr_t):
         print('\trequest not found in l1')
     
     print(f'\tNo. of L1 MSHR - l1_mshr_i: {l1_mshr_i}\n'
-          f'\tStart Time - l1_mshr_start: {l1_mshr_start}ns\n')
+          f'\tStart Time - l1_mshr_start: {l1_mshr_start}ns')
     if l1_mshr_end != length_ns:
-        print(f'\tEnd Time - l1_mshr_end: {l1_mshr_end}ns\n')
+        print(f'\tEnd Time - l1_mshr_end: {l1_mshr_end}ns')
     
-    print(f'\tRequest in l1 MSHR:\n'
+    print(f'\n\tRequest in l1 MSHR:\n'
           f'\treq_set: {l1_req_set}\n'
           f'\treq_tag: {l1_req_tag}\n'
           f'\treq_source: {l1_req_source}\n'
@@ -250,7 +249,7 @@ def acquire_block(waveform, l2_i, tag, set, mshr_t):
             if v == 1:
                 l3_mshr_status.append([i, t, length_ns])
             else:
-                if l3_mshr_status:
+                if l3_mshr_status and l3_mshr_status[-1][0] == i:
                     l3_mshr_status[-1][-1] = t
     
     l3_mshr_status.sort(key=lambda x: x[1])
@@ -299,11 +298,11 @@ def acquire_block(waveform, l2_i, tag, set, mshr_t):
         return -1, -1, -1
     
     print(f'\tNo. of L3 MSHR - l3_mshr_i: {l3_mshr_i}\n'
-          f'\tStart Time - l3_mshr_start: {l3_mshr_start}ns\n')
+          f'\tStart Time - l3_mshr_start: {l3_mshr_start}ns')
     if l3_mshr_end != length_ns:
-        print(f'\tEnd Time - l3_mshr_end: {l3_mshr_end}ns\n')
+        print(f'\tEnd Time - l3_mshr_end: {l3_mshr_end}ns')
     
-    print(f'\tRequest in L3 MSHR:\n'
+    print(f'\n\tRequest in L3 MSHR:\n'
           f'\treq_set: {l3_req_set}\n'
           f'\treq_tag: {l3_req_tag}\n'
           f'\treq_source: {l3_req_source}\n'
@@ -392,16 +391,7 @@ def find_trans_in_mshr(waveform, level, l_i, addr, start_time, end_time, trans):
         return {}, {}
     print(f'Request found in {level_str} mshr {this_mshr_i}: starting from {this_mshr_start}ns\n')
         
-    this_send_trans = get_transactions(waveform, TileLinkConsts.l2_state_s_signals, 
-                                       f'VerifyTop.{level_str}.slices_0.mshrCtl.mshrs', this_mshr_i, this_mshr_start, end_time)
-    this_wait_trans = get_transactions(waveform, TileLinkConsts.l2_state_w_signals, 
-                                       f'VerifyTop.{level_str}.slices_0.mshrCtl.mshrs', this_mshr_i, this_mshr_start, end_time)
-    
-    print(f'{level}_{l_i} signals:')
-    for trans, t in this_send_trans.items():
-        print(f's_transaction {trans}: starting from {t[0]}ns to {t[1]}ns')
-    for trans, t in this_wait_trans.items():
-        print(f'w_transaction {trans}: starting from {t[0]}ns to {t[1]}ns')
+    this_send_trans, this_wait_trans = print_transactions(waveform, level, l_i, this_mshr_i, this_mshr_start, end_time)
         
     return this_send_trans, this_wait_trans
 
@@ -601,7 +591,7 @@ def trace_conflict_mshr(waveform, level, l_i, mshr_i, conflict_t):
             if v == 1:
                 l2_mshr_status.append([i, t, length_ns])
             else:
-                if l2_mshr_status:
+                if l2_mshr_status and l2_mshr_status[-1][0] == i:
                     l2_mshr_status[-1][-1] = t
                     
     l2_mshr_status.sort(key=lambda x: x[1])
@@ -670,7 +660,7 @@ def trace_conflict_mshr(waveform, level, l_i, mshr_i, conflict_t):
             if v == 1:
                 l3_mshr_status.append([i, t, length_ns])
             else:
-                if l3_mshr_status:
+                if l3_mshr_status and l3_mshr_status[-1][0] == i:
                     l3_mshr_status[-1][-1] = t
     l3_mshr_status.sort(key=lambda x: x[1])
 
@@ -724,7 +714,7 @@ def probe_ack(waveform, l2_i, addr, start_time, end_time):
     # 从L2的MSHR定位请求
     l2_send_trans, l2_wait_trans = find_trans_in_mshr(waveform, 'l2', l2_i, addr, start_time, end_time, TileLinkConsts.Probe)
     # L2会向L1发相同的Probe
-    if len(l2_send_trans) == 0 or len(l2_wait_trans) == 0:
+    if not l2_send_trans or not l2_wait_trans:
         print(f'\nNo Probe request (addr={addr}) found in l2_{l2_i}')
         mshr_req_info = get_all_trans_in_mshrs(waveform, 'l2', l2_i, start_time, end_time)
         task_s4_req_info = get_all_trans_in_mainpipe(waveform, 'l2', l2_i, start_time, end_time)
@@ -734,12 +724,12 @@ def probe_ack(waveform, l2_i, addr, start_time, end_time):
     # L2 发送了Probe给L1但超过500拍没收到ProbeAck
     if 'state_s_pprobe' in l2_send_trans:
         if 'state_w_pprobeack' in l2_wait_trans:
-            if l2_send_trans['state_s_pprobe'][1] + 500*ns_per_beat < l2_wait_trans['state_w_pprobeack'][1] or \
-                l2_wait_trans['state_w_pprobeack'][1] == length_ns:
+            if l2_send_trans['state_s_pprobe'][0][1] + 500*ns_per_beat < l2_wait_trans['state_w_pprobeack'][0][1] or \
+                l2_wait_trans['state_w_pprobeack'][0][1] == length_ns:
                 print(f'L2_{l2_i} sent a Probe request (pprobe) to L1_{l2_i} but did not receive ProbeAck')
     
     l1_send_trans, l1_wait_trans = find_trans_in_mshr(waveform, 'l1', l2_i, addr, start_time, end_time, TileLinkConsts.Probe)
-    if len(l1_send_trans) == 0 or len(l1_wait_trans) == 0:
+    if not l1_send_trans or not l1_wait_trans:
         print(f'\nNo Probe request (addr={addr}) found in l1_{l2_i}')
         mshr_req_info = get_all_trans_in_mshrs(waveform, 'l1', l2_i, start_time, end_time)
         task_s4_req_info = get_all_trans_in_mainpipe(waveform, 'l1', l2_i, start_time, end_time)
@@ -754,11 +744,11 @@ def probe_ack(waveform, l2_i, addr, start_time, end_time):
             node_L2_1 = f'L2_{l2_i}'
             normal_edges = {}
             waiting_edges = {
-                (node_L0_0, node_L1_0): f'Prefetch {addr}', 
-                (node_L1_0, node_L2_0): f'Acquire {addr}',
-                (node_L2_0, 'L3'): f'Acquire {addr}',
-                ('L3', node_L2_1): f'Probe {addr}', 
-                (node_L2_1, node_L1_1): f'Probe {addr}',
+                (node_L0_0, node_L1_0): f'Prefetch addr {addr}', 
+                (node_L1_0, node_L2_0): f'Acquire addr {addr}',
+                (node_L2_0, 'L3'): f'Acquire addr {addr}',
+                ('L3', node_L2_1): f'Probe addr {addr}', 
+                (node_L2_1, node_L1_1): f'Probe addr {addr}',
             }
             blocked_edges = {
                 (node_L1_1, node_L1_1): 'Replace'
@@ -766,15 +756,15 @@ def probe_ack(waveform, l2_i, addr, start_time, end_time):
             
             level, conflict_addr = trace_conflict_mshr(waveform, 'l1', l2_i, conflict_mshr, start_time+ns_per_beat)
             
-            waiting_edges[(node_L0_1, node_L1_1)] = f'Prefetch {conflict_addr}'
+            waiting_edges[(node_L0_1, node_L1_1)] = f'Prefetch addr {conflict_addr}'
             if level == 1:
-                blocked_edges[(node_L1_1, node_L2_1)] = f'Acquire {conflict_addr}'
+                blocked_edges[(node_L1_1, node_L2_1)] = f'Acquire addr {conflict_addr}'
             elif level == 2:
-                waiting_edges[(node_L1_1, node_L2_1)] = f'Acquire {conflict_addr}'
-                blocked_edges[(node_L2_1, 'L3')] = f'Acquire {conflict_addr}'
+                waiting_edges[(node_L1_1, node_L2_1)] = f'Acquire addr {conflict_addr}'
+                blocked_edges[(node_L2_1, 'L3')] = f'Acquire addr {conflict_addr}'
             else:
-                waiting_edges[(node_L1_1, node_L2_1)] = f'Acquire {conflict_addr}'
-                waiting_edges[(node_L2_1, 'L3')] = f'Acquire {conflict_addr}'
+                waiting_edges[(node_L1_1, node_L2_1)] = f'Acquire addr {conflict_addr}'
+                waiting_edges[(node_L2_1, 'L3')] = f'Acquire addr {conflict_addr}'
         else:    
             node_L0_0 = f'L0_{l2_i^1}'
             node_L0_1 = f'L0_{l2_i}'
@@ -784,18 +774,27 @@ def probe_ack(waveform, l2_i, addr, start_time, end_time):
             node_L2_1 = f'L2_{l2_i}'
             normal_edges = {(node_L0_1, node_L1_1): 'Prefetch'}
             waiting_edges = {
-                (node_L0_0, node_L1_0): f'Prefetch {addr}', 
-                (node_L1_0, node_L2_0): f'Acquire {addr}', 
-                (node_L2_0, 'L3'): f'Acquire {addr}',
-                ('L3', node_L2_1): f'Probe {addr}', 
-                (node_L2_1, node_L1_1): f'Probe {addr}'
+                (node_L0_0, node_L1_0): f'Prefetch addr {addr}', 
+                (node_L1_0, node_L2_0): f'Acquire addr {addr}', 
+                (node_L2_0, 'L3'): f'Acquire addr {addr}',
+                ('L3', node_L2_1): f'Probe addr {addr}', 
+                (node_L2_1, node_L1_1): f'Probe addr {addr}'
             }
             blocked_edges = {
                 (node_L1_1, node_L2_1): 'ProbeAckData'
             }
             
-        # graph_wrapper(normal_edges, waiting_edges, blocked_edges)
+        graph_wrapper(normal_edges, waiting_edges, blocked_edges)
+        print('wait-for graph created')
     
+    
+# 若l3向l2_i发送了grant且收到了grantack，从发送时间start_time开始排查l2的l2_mshr_i
+def grant_ack(waveform, l2_i, req_set, req_tag, l2_mshr_i, start_time, end_time):
+    l2_send_trans, l2_wait_trans = print_transactions(waveform, 'l2', l2_i, l2_mshr_i, start_time, end_time)
+      
+    if l2_wait_trans['state_w_replResp']:
+        if l2_wait_trans['state_w_replResp'][0][1] - l2_wait_trans['state_w_replResp'][0][0] > 500*ns_per_beat:
+            print(f'L2_{l2_i} was replacing but did not complete')
     
 print('Stagnation Detected:')
 
@@ -830,19 +829,17 @@ if (req_opcode, req_channel) == TileLinkConsts.AcquireBlock:
         l3_mshr_end = length_ns
 
     
-l3_send_trans = get_transactions(waveform, TileLinkConsts.l3_state_s_signals, 'VerifyTop.l3.slices_0.ms', l3_mshr_i, l3_mshr_start, l3_mshr_end)
-l3_wait_trans = get_transactions(waveform, TileLinkConsts.l3_state_w_signals, 'VerifyTop.l3.slices_0.ms', l3_mshr_i, l3_mshr_start, l3_mshr_end)
-
-print('L3 signals:')
-for trans, t in l3_send_trans.items():
-    print(f's_transaction {trans}: starting from {t[0]}ns to {t[1]}ns')
-for trans, t in l3_wait_trans.items():
-    print(f'w_transaction {trans}: starting from {t[0]}ns to {t[1]}ns')
+l3_send_trans, l3_wait_trans = print_transactions(waveform, 'l3', '', l3_mshr_i, l3_mshr_start, l3_mshr_end)
 
 # L3 发送了probe但超过500拍没收到probeack
-if 's_probe' in l3_send_trans:
-    if 'w_probeack' in l3_wait_trans:
-        if l3_send_trans['s_probe'][1] + 500*ns_per_beat < l3_wait_trans['w_probeack'][1] or \
-            l3_wait_trans['w_probeack'][1] == length_ns:
+if l3_send_trans['s_probe'] and l3_wait_trans['w_probeack'] \
+    and l3_wait_trans['w_probeack'][0][1] - l3_wait_trans['w_probeack'][0][0] > 500*ns_per_beat:
             print(f'L3 sent a Probe request to L2_{l2_i^1} but did not receive ProbeAck')
-            probe_ack(waveform, l2_i ^ 1, get_l2_addr(req_tag, req_set), l3_send_trans['s_probe'][1], length_ns)
+    probe_ack(waveform, l2_i ^ 1, get_l2_addr(req_tag, req_set), l3_send_trans['s_probe'][0][1], length_ns)
+
+# L3 发送了grant并且收到了grantack，即问题出在 L2
+elif l3_send_trans['s_wbclientsdir'] or l3_send_trans['s_wbclientstag'] and l3_wait_trans['w_grantack']:
+    send_t = l3_send_trans['s_wbclientsdir'][0][1] if l3_send_trans['s_wbclientsdir'] else l3_send_trans['s_wbclientstag'][0][1]
+    if l3_wait_trans['w_grantack'][0][1] - send_t < 500*ns_per_beat:
+        print(f'L3 sent a Grant request to L2_{l2_i} and received GrantAck\n')
+        grant_ack(waveform, l2_i, req_set, req_tag, mshr, send_t, length_ns)

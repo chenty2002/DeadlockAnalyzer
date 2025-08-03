@@ -29,18 +29,18 @@ def graph_wrapper(normal_edges, waiting_edges, blocked_edges, nodes=('L0_0', 'L0
         
     edge_labels = normal_edges | waiting_edges | blocked_edges
         
-    plt.figure(figsize=(10, 8))
+    plt.figure(figsize=(5, 4))
 
     # 使用spring布局算法
     # pos = nx.nx_pydot.graphviz_layout(G, prog='dot')
     pos = {
-        'L0_0': (0, 15),
-        'L0_1': (5, 15),
-        'L1_0': (0, 10),
-        'L1_1': (5, 10),
-        'L2_0': (0, 5),
-        'L2_1': (5, 5),
-        'L3': (2.5, 0)
+        'L0_0': (0, 150),
+        'L0_1': (50, 150),
+        'L1_0': (0, 100),
+        'L1_1': (50, 100),
+        'L2_0': (0, 50),
+        'L2_1': (50, 50),
+        'L3': (25, 0)
     }
 
     # 绘制节点
@@ -58,12 +58,12 @@ def graph_wrapper(normal_edges, waiting_edges, blocked_edges, nodes=('L0_0', 'L0
     # 绘制节点标签
     nx.draw_networkx_labels(G, pos, font_size=12)
     nx.draw_networkx_edge_labels(
-        G, pos, edge_labels=edge_labels, label_pos=0.2, 
+        G, pos, edge_labels=edge_labels, label_pos=0.33, 
         font_size=8, rotate=False, connectionstyle="arc3,rad=0.1"
     )
     plt.axis("off")
     plt.tight_layout()
-    plt.savefig('waitfor_graph.png')
+    plt.savefig('waitfor_graph.png', transparent=True)
 
 
 def draw_graph(edges, name):
