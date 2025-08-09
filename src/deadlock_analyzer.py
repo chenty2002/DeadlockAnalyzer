@@ -733,15 +733,14 @@ def probe_ack(waveform, l2_i, addr, start_time, end_time):
         print(f'\nNo Probe request (addr={addr}) found in l1_{l2_i}')
         mshr_req_info = get_all_trans_in_mshrs(waveform, 'l1', l2_i, start_time, end_time)
         task_s4_req_info = get_all_trans_in_mainpipe(waveform, 'l1', l2_i, start_time, end_time)
-        
+        node_L0_0 = f'L0_{l2_i^1}'
+        node_L0_1 = f'L0_{l2_i}'
+        node_L1_0 = f'L1_{l2_i^1}'
+        node_L1_1 = f'L1_{l2_i}'
+        node_L2_0 = f'L2_{l2_i^1}'
+        node_L2_1 = f'L2_{l2_i}'
         conflict_mshr = dir_way_conflict(waveform, 'l1', l2_i, addr, start_time, end_time)
         if conflict_mshr != -1:
-            node_L0_0 = f'L0_{l2_i^1}'
-            node_L0_1 = f'L0_{l2_i}'
-            node_L1_0 = f'L1_{l2_i^1}'
-            node_L1_1 = f'L1_{l2_i}'
-            node_L2_0 = f'L2_{l2_i^1}'
-            node_L2_1 = f'L2_{l2_i}'
             normal_edges = {}
             waiting_edges = {
                 (node_L0_0, node_L1_0): f'Prefetch addr {addr}', 
@@ -755,23 +754,25 @@ def probe_ack(waveform, l2_i, addr, start_time, end_time):
             }
             
             level, conflict_addr = trace_conflict_mshr(waveform, 'l1', l2_i, conflict_mshr, start_time+ns_per_beat)
-            
-            waiting_edges[(node_L0_1, node_L1_1)] = f'Prefetch addr {conflict_addr}'
-            if level == 1:
-                blocked_edges[(node_L1_1, node_L2_1)] = f'Acquire addr {conflict_addr}'
-            elif level == 2:
-                waiting_edges[(node_L1_1, node_L2_1)] = f'Acquire addr {conflict_addr}'
-                blocked_edges[(node_L2_1, 'L3')] = f'Acquire addr {conflict_addr}'
-            else:
+            _, addr_set, _ = parse_l3_addr(addr)
+            _, conflict_addr_set, _ = parse_l3_addr(conflict_addr)
+            if l3_set_block(addr_set, conflict_addr_set):
+                print(f'This request (addr {conflict_addr}) is blocked by L3 for set conflicting with addr {addr}')
+                waiting_edges[(node_L0_1, node_L1_1)] = f'Prefetch addr {conflict_addr}'
                 waiting_edges[(node_L1_1, node_L2_1)] = f'Acquire addr {conflict_addr}'
                 waiting_edges[(node_L2_1, 'L3')] = f'Acquire addr {conflict_addr}'
-        else:    
-            node_L0_0 = f'L0_{l2_i^1}'
-            node_L0_1 = f'L0_{l2_i}'
-            node_L1_0 = f'L1_{l2_i^1}'
-            node_L1_1 = f'L1_{l2_i}'
-            node_L2_0 = f'L2_{l2_i^1}'
-            node_L2_1 = f'L2_{l2_i}'
+                blocked_edges['L3', 'L3'] = f'set conflict {conflict_addr} & {addr}'
+            else:     
+                waiting_edges[(node_L0_1, node_L1_1)] = f'Prefetch addr {conflict_addr}'
+                if level == 1:
+                    blocked_edges[(node_L1_1, node_L2_1)] = f'Acquire addr {conflict_addr}'
+                elif level == 2:
+                    waiting_edges[(node_L1_1, node_L2_1)] = f'Acquire addr {conflict_addr}'
+                    blocked_edges[(node_L2_1, 'L3')] = f'Acquire addr {conflict_addr}'
+                else:
+                    waiting_edges[(node_L1_1, node_L2_1)] = f'Acquire addr {conflict_addr}'
+                    waiting_edges[(node_L2_1, 'L3')] = f'Acquire addr {conflict_addr}'
+        else:
             normal_edges = {(node_L0_1, node_L1_1): 'Prefetch'}
             waiting_edges = {
                 (node_L0_0, node_L1_0): f'Prefetch addr {addr}', 
@@ -828,13 +829,13 @@ if (req_opcode, req_channel) == TileLinkConsts.AcquireBlock:
     if l3_mshr_end == -1:
         l3_mshr_end = length_ns
 
-    
+
 l3_send_trans, l3_wait_trans = print_transactions(waveform, 'l3', '', l3_mshr_i, l3_mshr_start, l3_mshr_end)
 
 # L3 发送了probe但超过500拍没收到probeack
 if l3_send_trans['s_probe'] and l3_wait_trans['w_probeack'] \
     and l3_wait_trans['w_probeack'][0][1] - l3_wait_trans['w_probeack'][0][0] > 500*ns_per_beat:
-            print(f'L3 sent a Probe request to L2_{l2_i^1} but did not receive ProbeAck')
+    print(f'L3 sent a Probe request to L2_{l2_i^1} but did not receive ProbeAck')
     probe_ack(waveform, l2_i ^ 1, get_l2_addr(req_tag, req_set), l3_send_trans['s_probe'][0][1], length_ns)
 
 # L3 发送了grant并且收到了grantack，即问题出在 L2
