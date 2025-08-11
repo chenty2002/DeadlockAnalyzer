@@ -1,9 +1,8 @@
 import networkx as nx
 import matplotlib.pyplot as plt
-import numpy as np
 
 
-def graph_wrapper(normal_edges, waiting_edges, blocked_edges, nodes=('L0_0', 'L0_1', 'L1_0', 'L1_1', 'L2_0', 'L2_1', 'L3')):
+def graph_wrapper(filename, normal_edges, waiting_edges, blocked_edges, nodes=('L0_0', 'L0_1', 'L1_0', 'L1_1', 'L2_0', 'L2_1', 'L3')):
     G = nx.DiGraph()
     G.add_nodes_from(nodes)
     G.add_edges_from(normal_edges.keys())
@@ -29,7 +28,7 @@ def graph_wrapper(normal_edges, waiting_edges, blocked_edges, nodes=('L0_0', 'L0
         
     edge_labels = normal_edges | waiting_edges | blocked_edges
         
-    plt.figure(figsize=(5, 4))
+    plt.figure(figsize=(8, 5))
 
     # 使用spring布局算法
     # pos = nx.nx_pydot.graphviz_layout(G, prog='dot')
@@ -45,7 +44,7 @@ def graph_wrapper(normal_edges, waiting_edges, blocked_edges, nodes=('L0_0', 'L0
 
     # 绘制节点
     node_colors = [G.nodes[node].get("color", "lightblue") for node in G.nodes]
-    nx.draw_networkx_nodes(G, pos, node_size=700, node_color=node_colors, alpha=0.8)
+    nx.draw_networkx_nodes(G, pos, node_size=1000, node_color=node_colors, alpha=0.8)
 
     # 绘制边
     edge_colors = [G.edges[edge].get("color", "gray") for edge in G.edges]
@@ -56,14 +55,17 @@ def graph_wrapper(normal_edges, waiting_edges, blocked_edges, nodes=('L0_0', 'L0
     )
 
     # 绘制节点标签
-    nx.draw_networkx_labels(G, pos, font_size=12)
+    nx.draw_networkx_labels(G, pos, font_size=14)
     nx.draw_networkx_edge_labels(
-        G, pos, edge_labels=edge_labels, label_pos=0.33, 
-        font_size=8, rotate=False, connectionstyle="arc3,rad=0.1"
+        G, pos, edge_labels=edge_labels, label_pos=0.37, 
+        font_size=10, rotate=False, connectionstyle="arc3,rad=0.1",
+        bbox={"facecolor": "white", "edgecolor": "none", "alpha": 0.7}
     )
     plt.axis("off")
     plt.tight_layout()
-    plt.savefig('waitfor_graph.png', transparent=True)
+    # plt.show()
+    plt.savefig(f'{filename}.png', transparent=True)
+    print('wait-for graph created')
 
 
 def draw_graph(edges, name):

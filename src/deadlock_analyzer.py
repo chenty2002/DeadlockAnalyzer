@@ -5,7 +5,7 @@ import param_configs
 import tilelink_consts
 from waitfor_graph import graph_wrapper
 
-from os.path import abspath, join, dirname
+from os.path import abspath, join, dirname, basename
 
 fst_path = abspath(join(dirname(__file__), '../fst'))
 
@@ -501,37 +501,64 @@ def dir_way_conflict(waveform, level, l_i, addr, start_time, end_time):
         req_s3_tag_sig = waveform.get_signal_from_path(f'{dir_str}.req_s3_tag')
         req_s3_valid_sig = waveform.get_signal_from_path(f'{dir_str}.reqValid_s3')
         finalWay_sig = waveform.get_signal_from_path(f'{dir_str}.finalWay')
-    except RuntimeError:
-        print('waveform version mismatch')
-        return
-    
-    mshr_i = -1
-    sig_changes = list(req_s3_valid_sig.all_changes())
-    for t, v in sig_changes:
-        if v == 0 or t < start_time:
-            continue
-        if t > end_time:
-            break
-        wayConfilictMask = wayConfilictMask_sig.value_at_time(t)
-        req_s3_set = req_s3_set_sig.value_at_time(t)
-        req_s3_tag = req_s3_tag_sig.value_at_time(t)
-        finalWay = finalWay_sig.value_at_time(t)
-        req_s3_addr = get_l1_addr(req_s3_tag, req_s3_set)
-        if req_s3_addr != addr:
-            continue
         
-        if wayConfilictMask:
-            mshr_i = OH2Int(wayConfilictMask)
-            print(f'In {level_str}, mshr_{mshr_i} is occupying way {finalWay}, causing retry in directory\n'
-                  f'(releaseNotSent || dirHit in mshr_{mshr_i})')
-            return mshr_i
-    if mshr_i == -1:
-        print(f'No way conflicts in {level_str}')
-    return mshr_i
+        mshr_i = -1
+        sig_changes = list(req_s3_valid_sig.all_changes())
+        for t, v in sig_changes:
+            if v == 0 or t < start_time:
+                continue
+            if t > end_time:
+                break
+            wayConfilictMask = wayConfilictMask_sig.value_at_time(t)
+            req_s3_set = req_s3_set_sig.value_at_time(t)
+            req_s3_tag = req_s3_tag_sig.value_at_time(t)
+            finalWay = finalWay_sig.value_at_time(t)
+            req_s3_addr = getattr(param_configs, f'get_{level}_addr')(req_s3_tag, req_s3_set)
+            if req_s3_addr != addr:
+                continue
+            
+            if wayConfilictMask:
+                mshr_i = OH2Int(wayConfilictMask)
+                print(f'In {level_str}, mshr_{mshr_i} is occupying way {finalWay}, causing retry in directory\n'
+                      f'(releaseNotSent || dirHit in mshr_{mshr_i})')
+                return mshr_i
+        if mshr_i == -1:
+            print(f'No way conflicts in {level_str}')
+        return mshr_i
+    except RuntimeError:
+        try:
+            freeWayMask_sig = waveform.get_signal_from_path(f'{dir_str}.freeWayMask_s3')
+            req_s3_set_sig = waveform.get_signal_from_path(f'{dir_str}.req_s3_set')
+            req_s3_tag_sig = waveform.get_signal_from_path(f'{dir_str}.req_s3_tag')
+            req_s3_valid_sig = waveform.get_signal_from_path(f'{dir_str}.reqValid_s3')
+            
+            sig_changes = list(req_s3_valid_sig.all_changes())
+            for t, v in sig_changes:
+                if v == 0 or t < start_time:
+                    continue
+                if t > end_time:
+                    break
+                freeWayMask = freeWayMask_sig.value_at_time(t)
+                req_s3_set = req_s3_set_sig.value_at_time(t)
+                req_s3_tag = req_s3_tag_sig.value_at_time(t)    
+                req_s3_addr = getattr(param_configs, f'get_{level}_addr')(req_s3_tag, req_s3_set)
+                if req_s3_addr != addr:
+                    continue
+                
+                if not freeWayMask:
+                    print(f'In {level_str}, every way is occupied by other mshrs, causing retry in directory\n'
+                          f'(releaseNotSent || dirHit)')
+                    return 1
+            print(f'No way conflicts in {level_str}')
+            return 0
+        except RuntimeError:
+            print('waveform version mismatch')
+        return -1
+    
 
-
-def trace_conflict_mshr(waveform, level, l_i, mshr_i, conflict_t):
-    level_str = get_level_str(level, l_i)
+# 在l1_i的mshr_i内在conflict_t时发生了way冲突，沿l1，l2，l3路径排查，返回路径终点和请求地址
+def trace_conflict_mshr_from_l1(waveform, l_i, mshr_i, conflict_t):
+    level_str = get_level_str('l1', l_i)
     mshr_str = f'VerifyTop.{level_str}.slices_0.mshrCtl.mshrs_{mshr_i}'
     
     l1_req_valid_sig = waveform.get_signal_from_path(f'{mshr_str}.req_valid')
@@ -753,7 +780,7 @@ def probe_ack(waveform, l2_i, addr, start_time, end_time):
                 (node_L1_1, node_L1_1): 'Replace'
             }
             
-            level, conflict_addr = trace_conflict_mshr(waveform, 'l1', l2_i, conflict_mshr, start_time+ns_per_beat)
+            level, conflict_addr = trace_conflict_mshr_from_l1(waveform, l2_i, conflict_mshr, start_time+ns_per_beat)
             _, addr_set, _ = parse_l3_addr(addr)
             _, conflict_addr_set, _ = parse_l3_addr(conflict_addr)
             if l3_set_block(addr_set, conflict_addr_set):
@@ -761,7 +788,7 @@ def probe_ack(waveform, l2_i, addr, start_time, end_time):
                 waiting_edges[(node_L0_1, node_L1_1)] = f'Prefetch addr {conflict_addr}'
                 waiting_edges[(node_L1_1, node_L2_1)] = f'Acquire addr {conflict_addr}'
                 waiting_edges[(node_L2_1, 'L3')] = f'Acquire addr {conflict_addr}'
-                blocked_edges['L3', 'L3'] = f'set conflict {conflict_addr} & {addr}'
+                blocked_edges[('L3', 'L3')] = f'set conflict {conflict_addr} & {addr}'
             else:     
                 waiting_edges[(node_L0_1, node_L1_1)] = f'Prefetch addr {conflict_addr}'
                 if level == 1:
@@ -785,8 +812,120 @@ def probe_ack(waveform, l2_i, addr, start_time, end_time):
                 (node_L1_1, node_L2_1): 'ProbeAckData'
             }
             
-        graph_wrapper(normal_edges, waiting_edges, blocked_edges)
-        print('wait-for graph created')
+        graph_wrapper(basename(fst_file)[:-4], normal_edges, waiting_edges, blocked_edges)
+    
+def trace_conflict_mshr_from_l2(waveform, l_i, mshr_i, conflict_t):
+    level_str = get_level_str('l2', l_i)
+    mshr_str = f'VerifyTop.{level_str}.slices_0.mshrCtl.mshrs_{mshr_i}'
+    try:
+        l2_req_valid_sig = waveform.get_signal_from_path(f'{mshr_str}.req_valid')
+        l2_req_set_sig = waveform.get_signal_from_path(f'{mshr_str}.req_set')
+        l2_req_tag_sig = waveform.get_signal_from_path(f'{mshr_str}.req_tag')
+        l2_req_channel_sig = waveform.get_signal_from_path(f'{mshr_str}.req_channel')
+        l2_req_opcode_sig = waveform.get_signal_from_path(f'{mshr_str}.req_opcode')
+    except RuntimeError:
+        return -1, 0
+
+    l2_req_set = -1
+    l2_req_tag = -1
+    l2_req_channel = -1
+    l2_req_opcode = -1
+    l2_start_time = -1
+    l2_end_time = -1
+    
+    sig_changes = list(l2_req_valid_sig.all_changes())
+    for t, v in sig_changes:
+        if v == 1:
+            l2_start_time = t
+            l2_req_set = l2_req_set_sig.value_at_time(t)
+            l2_req_tag = l2_req_tag_sig.value_at_time(t)
+            l2_req_channel = l2_req_channel_sig.value_at_time(t)
+            l2_req_opcode = l2_req_opcode_sig.value_at_time(t)
+        else:
+            if t > conflict_t:
+                l2_end_time = t
+                break
+        
+    l2_addr = get_l2_addr(l2_req_tag, l2_req_set)
+        
+    print(f'This conflict mshr {mshr_i} request in L2_{l_i} started at {l2_start_time}ns:\n'
+          f'\treq_set: {l2_req_set}\n\treq_tag: {l2_req_tag}\n\treq_channel: {l2_req_channel}\n'
+          f'\treq_opcode: {l2_req_opcode}\n\treq_addr: {l2_addr}\n')
+    if l2_end_time != -1:
+        print(f'ended at {l2_end_time}ns\n')
+
+    # HuanCun
+    l3_mshr_i = -1
+    l3_mshr_start = -1
+    l3_mshr_end = -1
+    l3_req_set = -1
+    l3_req_tag = -1
+    l3_req_channel = -1
+    l3_req_opcode = -1
+    
+    l3_iam = -1
+
+    l3_mshr_status = []
+    for i in range(16):
+        try:
+            mshr_i_status = waveform.get_signal_from_path(f'VerifyTop.l3.slices_0.mshrAlloc.io_status_{i}_valid')
+        except RuntimeError:
+            try:
+                mshr_i_status = waveform.get_signal_from_path(f'VerifyTop.l3.slices_0.mshrAlloc.io__status_{i}_valid')
+            except RuntimeError:
+                break
+        l3_sig_changes = list(mshr_i_status.all_changes())
+        for t, v in l3_sig_changes:
+            if v == 1:
+                l3_mshr_status.append([i, t, length_ns])
+            else:
+                if l3_mshr_status and l3_mshr_status[-1][0] == i:
+                    l3_mshr_status[-1][-1] = t
+    l3_mshr_status.sort(key=lambda x: x[1])
+
+    for i, ts, te in l3_mshr_status:
+        if ts < l2_start_time:
+            continue
+        l3_iam_sig = waveform.get_signal_from_path(f'VerifyTop.l3.slices_0.ms_{i}.iam')
+        l3_req_set_sig = waveform.get_signal_from_path(f'VerifyTop.l3.slices_0.ms_{i}.req_set')
+        l3_req_tag_sig = waveform.get_signal_from_path(f'VerifyTop.l3.slices_0.ms_{i}.req_tag')
+        l3_req_channel_sig = waveform.get_signal_from_path(f'VerifyTop.l3.slices_0.ms_{i}.req_channel')
+        l3_req_opcode_sig = waveform.get_signal_from_path(f'VerifyTop.l3.slices_0.ms_{i}.req_opcode')
+
+        l3_set_tmp = l3_req_set_sig.value_at_time(ts)
+        l3_tag_tmp = l3_req_tag_sig.value_at_time(ts)
+        if get_l3_addr(l3_tag_tmp, l3_set_tmp) != l2_addr:
+            continue
+        if l3_iam_sig.value_at_time(ts)%2 != l_i:
+            continue
+        l3_req_set = l3_req_set_sig.value_at_time(ts)
+        l3_req_tag = l3_req_tag_sig.value_at_time(ts)
+        l3_req_channel = l3_req_channel_sig.value_at_time(ts)
+        l3_req_opcode = l3_req_opcode_sig.value_at_time(ts)
+        
+        l3_iam = l3_iam_sig.value_at_time(ts)
+        l3_mshr_i = i
+        l3_mshr_start = ts
+        l3_mshr_end = te
+        break
+
+    if l3_mshr_i == -1:
+        print(f'\nThe consequent request of L2 mshr_{mshr_i} not found in L3')
+        return 2, l2_addr
+    
+    print(f'\nThe consequent request of L2 mshr_{mshr_i} in L3:\n'
+          f'\tl3_mshr_i: {l3_mshr_i}\n'
+          f'\tstarted at {l3_mshr_start}ns')
+    if l3_mshr_end != length_ns:
+        print(f'\tended at {l3_mshr_end}ns')
+    
+    print(f'\tRequest in L3 MSHR:\n'
+          f'\treq_set: {l3_req_set}\n'
+          f'\treq_tag: {l3_req_tag}\n'
+          f'\treq_channel: {l3_req_channel}\n'
+          f'\treq_opcode: {l3_req_opcode}\n'
+          f'\treq_addr: {get_l3_addr(l3_req_tag, l3_req_set)}')
+    return 3, l2_addr
     
     
 # 若l3向l2_i发送了grant且收到了grantack，从发送时间start_time开始排查l2的l2_mshr_i
@@ -796,6 +935,49 @@ def grant_ack(waveform, l2_i, req_set, req_tag, l2_mshr_i, start_time, end_time)
     if l2_wait_trans['state_w_replResp']:
         if l2_wait_trans['state_w_replResp'][0][1] - l2_wait_trans['state_w_replResp'][0][0] > 500*ns_per_beat:
             print(f'L2_{l2_i} was replacing but did not complete')
+            conflict = dir_way_conflict(waveform, 'l2', l2_i, get_l2_addr(req_tag, req_set), start_time, end_time)
+            if conflict:
+                l2_addr = get_l2_addr(req_tag, req_set)
+                _, l3_set, _ = parse_l3_addr(l2_addr)
+                conflict_sets = []
+                for mshr_i in range(16):
+                    if mshr_i == l2_mshr_i:
+                        continue
+                    level, addr = trace_conflict_mshr_from_l2(waveform, l2_i, mshr_i, start_time+ns_per_beat)
+                    if level == -1:
+                        break
+                    _, l3_conflict_set, _ = parse_l3_addr(addr)
+                    conflict_sets.append((mshr_i, l3_set, addr))
+                all_conflict = all([l3_set_block(l3_set, c_set[1]) for c_set in conflict_sets[:-1]])
+                if all_conflict:
+                    print(f'The sets (in L3) of the requests in other mshrs of L2_{l2_i}: '
+                          f'{[f'mshr {i}: {s}' for i, s, _ in conflict_sets]}\n'
+                          f'which are all in conflict with set {l3_set} (set blocking)')
+                    
+                    node_L0_0 = f'L0_{l2_i^1}'
+                    node_L0_1 = f'L0_{l2_i}'
+                    node_L1_0 = f'L1_{l2_i^1}'
+                    node_L1_1 = f'L1_{l2_i}'
+                    node_L2_0 = f'L2_{l2_i^1}'
+                    node_L2_1 = f'L2_{l2_i}'
+                    
+                    l2_acq_addrs = str(l2_addr)
+                    for _, _, a in conflict_sets[:-1]:
+                        l2_acq_addrs += f', {a}'
+                    normal_edges = {}
+                    waiting_edges = {
+                        (node_L0_1, node_L1_1): f'Prefetch addr {l2_addr}', 
+                        (node_L1_1, node_L2_1): f'Acquire addr {l2_addr}',
+                        (node_L2_1, 'L3'): f'Acquire addr {l2_addr}',
+                        ('L3', node_L2_0): f'Probe addr {l2_addr}',
+                        (node_L2_0, node_L2_0): f'Replace',
+                        (node_L2_0, 'L3'): '\n'.join([f'Acquire addr {a}' for _, _, a in conflict_sets[:-1]])
+                    }
+                    blocked_edges = {
+                        ('L3', 'L3'): f'set conflict\n' + '\n'.join([f'{a} & {l2_addr}' for _, _, a in conflict_sets[:-1]])
+                    }
+                    graph_wrapper(basename(fst_file)[:-4], normal_edges, waiting_edges, blocked_edges)
+  
     
 print('Stagnation Detected:')
 

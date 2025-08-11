@@ -46,7 +46,7 @@ def get_l3_addr(tag, set):
     return tag << (ParamConfig.l3_set_bits + ParamConfig.l3_offset_bits) | set << ParamConfig.l3_offset_bits
 
 def l3_set_block(set1, set2):
-    return (set1 & (1 << ParamConfig.l3_granularity -1)) == (set2 & (1 << ParamConfig.l3_granularity -1))
+    return set1 & (1 << ParamConfig.l3_granularity -1) == set2 & (1 << ParamConfig.l3_granularity -1)
 
 def parse_l1_addr(addr):
     offset = addr & ((1 << ParamConfig.l1_offset_bits) - 1)
